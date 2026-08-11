@@ -1,0 +1,97 @@
+{
+    // Generated from the Arm-FVP debug adapter template (see the `debugger:`
+    // node in cmsis-executorch-simple.csolution.yml), then patched -- see the
+    // "hand-edited" comment on the launch config below.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // Started by the CMSIS view's Load & Debug button, by name.
+            //
+            // updateConfiguration is "manual" because the generated form does
+            // not work as shipped and regeneration would undo the fix. Three
+            // fields under `target` are hand-edited:
+            //
+            //   port              blanked. cdt-gdb-adapter's startGDBServer
+            //                    resolves startup after `serverStartupDelay ??
+            //                    0` ms when both `port` and `serverParameters`
+            //                    are set -- i.e. GDB connects immediately,
+            //                    while the model is still building the platform
+            //                    (plus a container start on macOS). Leaving
+            //                    port empty selects the other branch, which
+            //                    waits for serverPortRegExp on the server's
+            //                    stdout and takes the port from the match.
+            //   serverPortRegExp  matches the GDBServer plugin's own banner.
+            //   portDetectionTimeout
+            //
+            // To re-sync after a target-type/build-type change: flip this to
+            // "auto", run "Update Debug Tasks and Launch Configurations",
+            // then re-apply the three `target` fields and set this back.
+            "name": "Arm-FVP@GDB (launch)",
+            "type": "gdbtarget",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/",
+            "program": "out/cmsis-executorch-simple/SSE-320-U85/Debug/cmsis-executorch-simple.elf",
+            "gdb": "arm-none-eabi-gdb",
+            "auxiliaryGdb": false,
+            "initCommands": [
+                "",
+                "set remote verbose-resume-supported-packet off",
+                "set remote verbose-resume-packet off",
+                "tbreak main"
+            ],
+            "target": {
+                // .vscode/fvp.sh, not FVP_Corstone_SSE-320 directly: it
+                // resolves GDBServer.so when $AVH_FVP_PLUGINS is unset,
+                // line-buffers the model's stdout so the banner below is not
+                // stuck in a 4KB pipe buffer, and runs the model in Docker on
+                // macOS, where Arm ships no FVP build.
+                "server": "${workspaceFolder}/.vscode/fvp.sh",
+                "serverParameters": [
+                    // -D is what makes the model start halted at the reset
+                    // vector. Without it the model opens the GDB port and
+                    // free-runs to completion, so `tbreak main` never fires.
+                    "-D",
+                    "--plugin",
+                    "${env:AVH_FVP_PLUGINS}/GDBServer.so",
+                    "-C",
+                    "GDBServer.port=3333",
+                    "-f",
+                    "board/Corstone-320/fvp_config.txt",
+                    "-a",
+                    "out/cmsis-executorch-simple/SSE-320-U85/Debug/cmsis-executorch-simple.elf"
+                ],
+                "port": "",
+                "serverPortRegExp": "GDBServer: Listening .*port=([0-9]+)",
+                "portDetectionTimeout": 300000
+            },
+            "cmsis": {
+                "cbuildRunFile": "${command:cmsis-csolution.getCbuildRunFile}",
+                "updateConfiguration": "manual"
+            }
+        },
+        {
+            // Attaches to a model someone else already started. No
+            // serverParameters, so the readiness race above does not apply and
+            // this one can stay on "auto".
+            "name": "Arm-FVP@GDB (attach)",
+            "type": "gdbtarget",
+            "request": "attach",
+            "cwd": "${workspaceFolder}/",
+            "program": "out/cmsis-executorch-simple/SSE-320-U85/Debug/cmsis-executorch-simple.elf",
+            "gdb": "arm-none-eabi-gdb",
+            "auxiliaryGdb": false,
+            "initCommands": [
+                "",
+                "set remote verbose-resume-supported-packet off",
+                "set remote verbose-resume-packet off"
+            ],
+            "target": {
+                "port": "3333"
+            },
+            "cmsis": {
+                "cbuildRunFile": "${command:cmsis-csolution.getCbuildRunFile}",
+                "updateConfiguration": "auto"
+            }
+        }
+    ]
+}

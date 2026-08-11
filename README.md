@@ -25,7 +25,7 @@ template, not a replacement for it. It is deliberately small and has two goals:
 | Who builds the AI layer | a GitHub Action, which commits artifacts back | the `executes:` build step, locally, on every build |
 | NPU / Vela configuration | hard-coded in `model/aot_model.py` | csolution `mlops:` node → `cbuild-mlops.yml` → Vela |
 | Target | Corstone-300 / Ethos-U55 | Corstone-320 / Ethos-U85 |
-| Run / debug | FVP via the CMSIS action buttons | FVP from the command line (the [`Codespaces`](../../tree/Codespaces) branch adds Run/Debug buttons and a devcontainer) |
+| Run / debug | FVP via the CMSIS action buttons | FVP via its own GDBServer plugin, incl. **Debug**; Codespaces devcontainer |
 
 Pick `main` if you want a hands-off, CI-driven template with a reproducible
 container. Pick this branch if you want a local, inspectable flow with a
@@ -33,7 +33,7 @@ minimal linked footprint and a single place to change the NPU target.
 
 Project files are named `cmsis-executorch-simple.*` here rather than `main`'s
 `executorch_project.*`. That is intentional: renaming would touch `build.sh`,
-every `out/` path and the debug wiring on the `Codespaces` branch, for no
+the `.vscode` scripts, `launch.json`, `tasks.json` and every `out/` path for no
 benefit on a parallel branch.
 
 ## Layout
@@ -50,6 +50,7 @@ benefit on a parallel branch.
 | `ai_layer/ai_layer.clayer.yml` | The model's CMSIS component selection (generated) |
 | `board/Corstone-320/` | Board bring-up (semihosting stdout + Ethos-U driver), trimmed |
 | `src/app_main.cpp` | Headless runner: load `.pte`, run one inference, print logits |
+| `.vscode/` | FVP run/debug wiring: maps the CMSIS Solution buttons onto the model (`fvp.sh`, `launch.json`) |
 | `documentation/` | [MLOps flow](documentation/mlops-flow.md), [pack provenance](documentation/pack-provenance.md), [cross-platform notes](documentation/cross-platform.md) |
 
 ## Prerequisites
@@ -67,7 +68,7 @@ Either wrapper just runs `setup_venv.py`, which creates `.venv/` and installs
 the pinned packages in three passes — see [Version pinning](#version-pinning)
 for what lands and why the passes are separate. The script is idempotent: run
 it again any time, and it rebuilds the venv by itself if the interpreter it
-points at has gone stale (which happens after a container rebuild).
+points at has gone stale (which happens after a devcontainer rebuild).
 
 **CMSIS-Toolbox with MLOps support** — the `mlops:` node was added in
 `csolution 2.14.1+p9`. Older builds (including some registry artifacts that
@@ -98,9 +99,12 @@ Building and exporting the model works on Linux, macOS and Windows. Two caveats:
 - **Windows long paths.** `torch` unpacks paths long enough to hit the legacy
   260-character `MAX_PATH` limit. `setup_venv.py` warns if long-path support is
   off; enable it, or clone nearer the drive root.
-- **Windows FVP invocation.** Building, exporting and running the FVP all work
-  from PowerShell; only the path separators differ. See
-  [cross-platform notes](documentation/cross-platform.md).
+- **Windows FVP run/debug needs Git Bash.** The **Load / Run / Debug** buttons
+  go through `.vscode/fvp.sh`, which is POSIX shell. Either put Git Bash on
+  `PATH`, or point the csolution's `debugger: model:` node straight at
+  `FVP_Corstone_SSE-320.exe` — neither of the shim's two jobs applies on
+  Windows. Building, exporting and running the FVP from the command line are
+  unaffected. See [cross-platform notes](documentation/cross-platform.md).
 
 ## Build
 
@@ -222,30 +226,69 @@ installed in three ordered passes:
 This is a *source* build: it needs CMake and a C++ toolchain and takes tens of
 minutes, so the prebuilt nightly wheel is the default.
 
-## Run on the FVP
+## GitHub Codespaces
 
-Run the built ELF on `FVP_Corstone_SSE-320` directly. `vcpkg activate` (or the
-Arm Environment Manager inside VS Code) puts it on `PATH` from the
-`arm:models/arm/avh-fvp` pin:
+This branch ships a devcontainer (`.devcontainer/`). Most of the tooling is
+handled by the **Arm Environment Manager** (installed with the Keil Studio
+extension pack): it reads `vcpkg-configuration.json` and installs/activates
+CMSIS-Toolbox, `arm-none-eabi-gcc` and the **AVH FVPs** (incl.
+`FVP_Corstone_SSE-320`), and it manages the required Arm **user-based
+license** (activate when prompted, or via *Arm Tools: Manage Arm License* in
+the command palette). The devcontainer's post-create script only adds what the
+extension does not: the FVP's system libraries and the model-export venv.
 
-```bash
-FVP_Corstone_SSE-320 \
-    -f board/Corstone-320/fvp_config.txt \
-    -a out/cmsis-executorch-simple/SSE-320-U85/Debug/cmsis-executorch-simple.elf
+Then `./build.sh` and use the CMSIS Solution panel's buttons as described
+below. **Debug** works in a Codespace with nothing extra installed: the
+`avh-fvp` artifact carries `plugins/GDBServer.so` next to the model, so the FVP
+is its own GDB server, and `arm-none-eabi-gdb` comes with the
+`arm-none-eabi-gcc` artifact. Model and debugger both run inside the container,
+so port 3333 needs no forwarding.
+
+## Run / Debug on the FVP
+
+The CMSIS Solution panel's **Load / Run / Debug** buttons drive
+`FVP_Corstone_SSE-320` directly. MDK FVP `11.32.23+` ships
+`plugins/GDBServer.so`, so the model is its own GDB server and no external
+bridge is involved. The whole wiring is one node in the csolution:
+
+```yaml
+debugger:
+  name: Arm-FVP
+  model: ${workspaceFolder}/.vscode/fvp.sh
+  config-file: board/Corstone-320/fvp_config.txt
 ```
 
-`board/Corstone-320/fvp_config.txt` pins `INITSVTOR` to the application's
-vector table in BRAM so debugger resets survive, and enables semihosting —
-stdio is retargeted to semihosting (`board/Corstone-320/retarget_stdio.c`), so
-printf output appears directly on the FVP's stdout with no UART model in
-between. The application does not implement the semihosting exit call, so the
-model keeps running after the last line; add `--simlimit 60` (as CI does) or
-stop it yourself.
+- **Run** starts a free-running model. **Load** is a no-op on its own — the
+  model loads the ELF itself, via the `-a` on its command line. **Debug**
+  starts the model halted at the reset vector (`-D`) with the GDBServer plugin
+  listening on port 3333, and attaches `arm-none-eabi-gdb` through the CMSIS
+  Debugger extension. Each gets its own task terminal, and the model's
+  semihosting output appears there.
+- `model:` points at [`.vscode/fvp.sh`](.vscode/fvp.sh) rather than at the
+  model itself. The shim resolves `plugins/GDBServer.so` when
+  `$AVH_FVP_PLUGINS` is unset (the case for a VS Code not started from a
+  `vcpkg activate`d shell), line-buffers the model's stdout so the GDBServer
+  banner is not stuck in a pipe buffer, and — on macOS, where Arm publishes no
+  FVP build — runs the model in Docker with the GDB port forwarded. That image
+  is built on first use from [`.vscode/fvp.Dockerfile`](.vscode/fvp.Dockerfile)
+  out of the same MDK FVP release `vcpkg-configuration.json` pins, so the model
+  is the same one a Linux developer runs.
+- `launch.json` is generated from the Arm-FVP adapter template, then patched:
+  the launch config's `port` is blanked (and `serverPortRegExp` /
+  `portDetectionTimeout` set) so the debug adapter waits for the GDBServer
+  banner instead of connecting after 0 ms, while the model is still building
+  the platform. `"updateConfiguration": "manual"` keeps regeneration from
+  undoing that; the comments in the file say how to re-sync deliberately.
+- `board/Corstone-320/fvp_config.txt` pins `INITSVTOR` to the application's
+  vector table in BRAM so debugger resets survive, and enables semihosting —
+  stdio is retargeted to semihosting (`board/Corstone-320/retarget_stdio.c`),
+  so printf output appears directly on the FVP's stdout with no UART model
+  in between.
 
-> **Run/Debug from the CMSIS Solution panel** — the
-> [`Codespaces`](../../tree/Codespaces) branch wires the **Load / Run / Debug**
-> buttons onto the model (which is its own GDB server from MDK FVP 11.32.23 on)
-> and adds a devcontainer for GitHub Codespaces.
+The only prerequisite is `FVP_Corstone_SSE-320` on `PATH`, which `vcpkg
+activate` (or the Arm Environment Manager inside VS Code) provides from the
+`arm:models/arm/avh-fvp` pin. On macOS nothing needs to be on `PATH`, but
+Docker has to be running.
 
 A successful run prints the output logits followed by `Test_result: PASS` on
 the FVP console:
@@ -269,9 +312,7 @@ Test_result: PASS
 - **An operator-set change needs two builds** — components are resolved before
   the build runs. See [Regenerating the component list](#regenerating-the-component-list).
 - **Running the FVP needs an Arm user-based license.**
-- **No editor run/debug wiring.** Running the FVP is a command line away; the
-  [`Codespaces`](../../tree/Codespaces) branch is the one that maps it onto the
-  CMSIS Solution panel's buttons.
+- **Windows FVP run/debug needs Git Bash**; see [Host OS support](#host-os-support).
 
 ## Notes
 

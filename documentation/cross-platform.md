@@ -100,14 +100,22 @@ New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
 
 Cloning nearer the drive root also works.
 
-### Running the FVP on Windows
+### FVP run/debug on Windows
 
-Nothing here is POSIX-only: building, exporting, and running the FVP from a
-command line all work as they do elsewhere.
+The CMSIS Solution panel's **Load / Run / Debug** buttons go through
+`.vscode/fvp.sh`, which is POSIX shell, so on Windows it needs Git Bash on
+`PATH`. The shim exists for two reasons that do not apply on Windows —
+resolving `plugins/GDBServer.so` when `%AVH_FVP_PLUGINS%` is unset, and running
+the model in Docker on macOS — so the simplest fix there is to point the
+`debugger: model:` node in `cmsis-executorch-simple.csolution.yml` straight at
+the model instead:
 
-(The `Codespaces` branch, which wires the FVP onto the CMSIS Solution panel's
-**Load / Run / Debug** buttons, does add a POSIX shell script in that path and
-so needs Git Bash on Windows. This branch has no such wiring.)
+```yaml
+model: FVP_Corstone_SSE-320.exe
+```
+
+Building, exporting, and running the FVP directly from a command line are all
+unaffected:
 
 ```powershell
 FVP_Corstone_SSE-320 -f board/Corstone-320/fvp_config.txt `

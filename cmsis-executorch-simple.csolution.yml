@@ -33,6 +33,24 @@ solution:
         - set:
           images:
             - project-context: cmsis-executorch-simple.Debug
+          debugger:
+            # Arm-FVP makes the extension generate the "Arm-FVP@GDB (launch)"
+            # config and the CMSIS Load/Run tasks straight onto the model. The
+            # model is its own GDB server: MDK FVP >= 11.32.23 ships
+            # plugins/GDBServer.so, so no external bridge is involved.
+            #
+            # model: points at a shim rather than FVP_Corstone_SSE-320 because
+            # it has to resolve GDBServer.so (${env:AVH_FVP_PLUGINS} is unset in
+            # a VS Code not started from an activated shell), line-buffer the
+            # model's stdout, and -- on macOS, where Arm ships no FVP build --
+            # run the model in Docker. See .vscode/fvp.sh.
+            #
+            # Do not add `args:`: the adapter template splits it unconditionally,
+            # so an empty string injects an empty argv entry into the model
+            # command line.
+            name: Arm-FVP
+            model: ${workspaceFolder}/.vscode/fvp.sh
+            config-file: board/Corstone-320/fvp_config.txt
 
   build-types:
     - type: Debug

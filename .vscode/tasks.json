@@ -1,0 +1,60 @@
+{
+    // Generated from the Arm-FVP debug adapter template (see the `debugger:`
+    // node in cmsis-executorch-simple.csolution.yml). The CMSIS view's Run
+    // button runs "CMSIS Load+Run".
+    //
+    // Note "CMSIS Run" starts its own free-running model -- it does not resume
+    // a model left halted by a debug session. GDB's detach leaves the core
+    // halted and the GDBServer plugin exposes no resume command, so resuming
+    // is not something a task can do.
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMSIS Load+Run",
+            "dependsOn": [
+                "CMSIS Load",
+                "CMSIS Run"
+            ],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
+        },
+        {
+            // The model loads the ELF itself, via the -a below.
+            "label": "CMSIS Load",
+            "type": "shell",
+            "command": "echo CMSIS Load: images are loaded by the FVP model when CMSIS Run starts.",
+            "options": {
+                "cwd": "${workspaceFolder}/",
+                "shell": {
+                    "executable": "/bin/bash",
+                    "args": [
+                        "-c"
+                    ]
+                }
+            },
+            "problemMatcher": []
+        },
+        {
+            // The bare model: no --plugin and no -D, so it free-runs.
+            "label": "CMSIS Run",
+            "type": "shell",
+            "command": "${workspaceFolder}/.vscode/fvp.sh",
+            "options": {
+                "cwd": "${workspaceFolder}/",
+                "shell": {
+                    "executable": "/bin/bash",
+                    "args": [
+                        "-c"
+                    ]
+                }
+            },
+            "args": [
+                "-f",
+                "board/Corstone-320/fvp_config.txt",
+                "-a",
+                "out/cmsis-executorch-simple/SSE-320-U85/Debug/cmsis-executorch-simple.elf"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}

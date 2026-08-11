@@ -32,7 +32,7 @@ RTE/
 # Local support-ticket material (logs, screenshots); never part of the example.
 support-cases/
 
-# Editor / container config. The FVP run/debug wiring that lives in these
-# directories is carried by the Codespaces branch, not by this one.
-.vscode/
-.devcontainer/
+# .vscode/ and .vscode.d/ are committed on this branch (they carry the FVP
+# run/debug wiring); the negation overrides machine-global excludes rules.
+!.vscode/
+!.vscode/**
