@@ -1,25 +1,58 @@
 # Where the ExecuTorch CMSIS pack comes from
 
 The `PyTorch::ExecuTorch` pack used by this branch is **installed into your
-CMSIS pack root**, like any other pack — nothing about it is vendored into this
-repository. This page explains where it comes from, how to build one yourself,
-and how to move to a newer ExecuTorch version.
+CMSIS pack root**, like any other pack — but it cannot be acquired the way any
+other pack is. This branch therefore carries the archive itself, one file under
+`packs/`, for `cpackget` to install. This page explains why, how to build a
+pack yourself, and how to move to a newer ExecuTorch version.
 
-## Where it comes from
+## Why the archive is committed
 
-The pack is published as an asset of the matching ExecuTorch GitHub release,
-which is also what its `.pdsc` declares as its download location:
+Neither normal acquisition route yields a working pack.
+
+**It is not in the public index.** `cpackget add PyTorch::ExecuTorch@1.4.0` has
+nothing to resolve — `index.pidx` carries no `PyTorch` vendor entry at all — so
+`cbuild --packs` cannot fetch it either, and a build that appears to work is a
+build whose pack root already had it.
+
+**The published release asset does not compile.** The `.pdsc` declares its
+download location as
 
 ```xml
 <url>https://github.com/pytorch/executorch/releases/download/v1.4.0/</url>
 ```
 
-So the normal acquisition routes work, and `./build.sh` (which passes
-`--packs`) takes care of it on a fresh clone. To install it by hand:
+and that URL does serve a pack — but the asset there was built by upstream CI
+from a release branch carrying stale pack-build scripts. It ships none of the
+generated FlatBuffers/schema headers: `program_generated.h` and
+`scalar_type_generated.h` are absent, and so is the bundled
+`include/flatbuffers/`, while ten core runtime sources include them. Its
+Runtime component cannot compile, so no configuration of that pack builds.
+
+Measured against the copy committed here (as of 2026-08-11):
+
+| | `packs/PyTorch.ExecuTorch.1.4.0.pack` | published `v1.4.0` asset |
+|---|---|---|
+| sha256 | `29bee68a…` | `089ed734…` |
+| size | 1,766,058 B | 1,576,905 B |
+| `program_generated.h`, `scalar_type_generated.h` | present | absent |
+| bundled `include/flatbuffers/` | 35 entries | none |
+
+### Installing it
 
 ```bash
-cpackget add PyTorch::ExecuTorch@1.4.0
+cpackget add -n --agree-embedded-license packs/PyTorch.ExecuTorch.1.4.0.pack
 ```
+
+`.devcontainer/post-create.sh` runs this. `-n` (`--no-dependencies`) matters:
+the pack declares `ARM::CMSIS`, resolving that needs an index a fresh pack root
+has not fetched, and `cpackget` then exits 255 *after* installing our pack
+correctly — which would abort the bootstrap. Those dependencies are public
+packs that `cbuild --packs` installs at build time anyway.
+
+Committing the archive rather than the unpacked pack costs one file instead of
+937, and a fifth of the space. It goes away when ExecuTorch publishes a pack
+that builds, and indexes it.
 
 The version is pinned exactly, in `cmsis-executorch-simple.csolution.yml` and
 `cmsis-executorch-simple.cproject.yml`:
@@ -127,7 +160,9 @@ that loads it will fail at load time, or worse, at inference time. Four steps,
 in order:
 
 1. **Install the new pack** — `cpackget add PyTorch::ExecuTorch@<new>`, or
-   build one yourself (above) if the version is not published.
+   build one yourself (above) if the version is not published. On this branch,
+   also replace the archive under `packs/` with the new one and update the
+   filename in `.devcontainer/post-create.sh`.
 2. **Update both pins** — `PyTorch::ExecuTorch@<new>` in the csolution and in
    the cproject.
 3. **Update the Python pin** in `requirements-executorch.txt` to the matching

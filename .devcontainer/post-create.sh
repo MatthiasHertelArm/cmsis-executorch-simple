@@ -29,6 +29,30 @@ sudo rm -rf /var/lib/apt/lists/*
 # model on PATH, so it works here without $AVH_FVP_PLUGINS being set, and its
 # Docker branch is macOS-only and never taken in a container.
 
+# The ExecuTorch pack, from the copy committed under packs/. Installing it from
+# the repository rather than letting `cbuild --packs` fetch it keeps a Codespace
+# independent of the public pack index, and pins the bytes: the pack root ends
+# up holding exactly the build this branch was tested against.
+#
+# Guarded, because cpackget arrives with the CMSIS-Toolbox vcpkg artifact, which
+# the Arm Environment Manager installs on its first activation -- often after
+# this script has run. The install is idempotent either way.
+#
+# -n (--no-dependencies): the pack declares ARM::CMSIS, and resolving that needs
+# the public index, which a pack root created by this script has not fetched
+# yet -- cpackget then exits 255 and takes the whole bootstrap with it, despite
+# having extracted our pack correctly. The dependencies are public packs that
+# `cbuild --packs` installs at build time anyway. Re-running is safe: an
+# already-installed pack is reported but exits 0.
+PACK="packs/PyTorch.ExecuTorch.1.4.0.pack"
+if command -v cpackget >/dev/null 2>&1; then
+    cpackget add -n --agree-embedded-license "${PACK}"
+else
+    echo "cpackget not on PATH yet (the Arm Environment Manager installs it on"
+    echo "first activation). Once the toolchain is active, run:"
+    echo "    cpackget add -n --agree-embedded-license ${PACK}"
+fi
+
 # Model-export venv (executorch + ethos-u-vela). setup_venv.py is idempotent
 # and rebuilds the venv by itself if its interpreter no longer runs -- the case
 # after a container rebuild, since /workspaces persists but the image's Python

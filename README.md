@@ -51,6 +51,7 @@ benefit on a parallel branch.
 | `board/Corstone-320/` | Board bring-up (semihosting stdout + Ethos-U driver), trimmed |
 | `src/app_main.cpp` | Headless runner: load `.pte`, run one inference, print logits |
 | `.vscode/` | FVP run/debug wiring: maps the CMSIS Solution buttons onto the model (`fvp.sh`, `launch.json`) |
+| `packs/PyTorch.ExecuTorch.1.4.0.pack` | The ExecuTorch pack archive, installed with `cpackget add` — see [pack provenance](documentation/pack-provenance.md) |
 | `documentation/` | [MLOps flow](documentation/mlops-flow.md), [pack provenance](documentation/pack-provenance.md), [cross-platform notes](documentation/cross-platform.md) |
 
 ## Prerequisites
@@ -77,15 +78,28 @@ VS Code extension bundles a working build; `vcpkg` pulls a compatible one via
 `vcpkg-configuration.json`. `arm-none-eabi-gcc` comes from the same place.
 `build.sh` runs `vcpkg activate` for you.
 
-**A CMSIS pack root** with `PyTorch::ExecuTorch@1.4.0` and the public
-dependency packs (`ARM::CMSIS`, `ARM::CMSIS-NN`, `ARM::CMSIS-Compiler`,
-`ARM::Cortex_DFP`, `ARM::SSE_320_BSP`, `ARM::ethos-u-core-driver`). `cbuild
---packs` — which `build.sh` passes — installs any that are missing, so a fresh
-clone needs no pack step of its own. To install the ExecuTorch pack by hand:
+**A CMSIS pack root.** The public dependency packs (`ARM::CMSIS`,
+`ARM::CMSIS-NN`, `ARM::CMSIS-Compiler`, `ARM::Cortex_DFP`, `ARM::SSE_320_BSP`,
+`ARM::ethos-u-core-driver`) are installed by `cbuild --packs`, which `build.sh`
+passes, so none of those need a step of their own.
+
+`PyTorch::ExecuTorch@1.4.0` is the exception, and the reason this branch carries
+`packs/PyTorch.ExecuTorch.1.4.0.pack`: it cannot be acquired the normal way.
+The pack is not in the public pack index, so `cpackget add
+PyTorch::ExecuTorch@1.4.0` has nothing to resolve, and the archive attached to
+the `v1.4.0` GitHub release is a build that does not compile — it ships none of
+the generated FlatBuffers headers its own runtime sources include. The copy
+here is the corrected build, and it is the one this branch is tested against.
+The devcontainer installs it for you; by hand it is:
 
 ```bash
-cpackget add PyTorch::ExecuTorch@1.4.0
+cpackget add -n --agree-embedded-license packs/PyTorch.ExecuTorch.1.4.0.pack
 ```
+
+`-n` skips the pack's declared dependencies — those are the public packs above,
+which `cbuild --packs` installs anyway, and resolving them here needs an index a
+fresh pack root has not fetched yet. Without it `cpackget` exits non-zero
+*after* installing the pack correctly.
 
 The version is pinned exactly, because the pack's C++ runtime and the Python
 exporter must be the same ExecuTorch version. See
@@ -235,7 +249,13 @@ CMSIS-Toolbox, `arm-none-eabi-gcc` and the **AVH FVPs** (incl.
 `FVP_Corstone_SSE-320`), and it manages the required Arm **user-based
 license** (activate when prompted, or via *Arm Tools: Manage Arm License* in
 the command palette). The devcontainer's post-create script only adds what the
-extension does not: the FVP's system libraries and the model-export venv.
+extension does not: the FVP's system libraries, the ExecuTorch pack from
+`packs/`, and the model-export venv.
+
+The pack install is skipped with a printed hint if `cpackget` is not on `PATH`
+yet — it arrives with the CMSIS-Toolbox artifact, which the Environment Manager
+fetches on its first activation, sometimes after post-create has run. Run the
+printed command then; the build cannot fetch this pack for you.
 
 Then `./build.sh` and use the CMSIS Solution panel's buttons as described
 below. **Debug** works in a Codespace with nothing extra installed: the
